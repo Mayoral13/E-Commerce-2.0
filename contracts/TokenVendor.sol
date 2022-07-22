@@ -1,11 +1,10 @@
 pragma solidity ^0.8.11;
-import "./OGGToken.sol";
+import"@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./SafeMath.sol";
-contract TokenVendor{
-    OGG myogg;
+import "./Ownable.sol";
+contract TokenVendor is ERC20,Ownable{
     using SafeMath for uint;
     uint private Circulation;
-    address private owner;
     uint private rate = 40000000000000;
     mapping(address => uint)Bought;
     mapping(address => uint)Sold;
@@ -16,9 +15,9 @@ contract TokenVendor{
     event withdraw(address indexed _from,address indexed _to,uint _value);
     
 
-    constructor(address tokenAddress){
-        myogg = OGG(tokenAddress);
-        owner = msg.sender;
+    constructor()
+    ERC20("E-COMMERCE Inu","EINU"){
+        
     }
     modifier OnlyOwner(){
         require(msg.sender == owner,"Unauthorized Access");
@@ -48,13 +47,14 @@ contract TokenVendor{
 
 
     function BuyTokens()external payable returns(bool success){
-        uint VendorBalance = myogg.balanceOf(address(this));
         require(rate != 0,"Rate has not been set");
         require(msg.value != 0,"You cannot send nothing");
         uint bought = msg.value.div(rate);
-        require(VendorBalance >= bought,"Amount is too high");
+        uint fee = (bought.mul(10)).div(100);
+        uint recieve = bought.sub(fee);
         bought = msg.value.div(rate);
-        myogg.transferFrom(address(this),msg.sender,bought);
+        _mint(msg.sender,recieve);
+        _mint(address(this),fee);
         Circulation = Circulation.add(bought);
         emit tokensBought(msg.sender,bought);
         return true;
@@ -62,37 +62,47 @@ contract TokenVendor{
 
      function SellTokens(uint amount)external returns(bool success){
         uint sold = amount.mul(rate);
-        uint UserBalance = myogg.balanceOf(msg.sender);
+        uint fee = (amount.mul(10)).div(100);
+        uint recieve = sold.sub(fee);
+        uint UserBalance = balanceOf(msg.sender);
         require(amount != 0,"You cannot sell nothing");
         require(UserBalance >= amount,"Insufficient Amount Of Tokens");
         require(rate != 0,"Rate has not been set");
         require(BalanceVendor() >= sold,"Insufficient Cash");
-        payable(msg.sender).transfer(sold);
-        myogg.transfer(address(this),amount);
+        _burn(msg.sender,amount);
+        _mint(address(this),fee);
         Circulation = Circulation.sub(amount);
+        payable(msg.sender).transfer(recieve);
         emit tokensSold(msg.sender,amount);
         return true;
     }
-
+  
     function TokeninCirculation()external view returns(uint){
         return Circulation;
     }
 
-    function Withdraw(address payable _to,uint amount)external OnlyOwner payable returns(bool success){
+    function WithdrawETH(address payable _to,uint amount)external OnlyOwner payable returns(bool success){
         require(address(this).balance >= amount,"Insufficient Balance");
         _to.transfer(amount);
         emit withdraw(msg.sender,_to,amount);
         return true;
     }
+    function TransferTokens(address _to,uint amount)external OnlyOwner returns(bool success){
+        require(VendorTokenBalance() >= amount,"Insufficient amount");
+        _mint(_to,amount);
+        _burn(address(this),amount);
+        return true;
+    }
+
     function BalanceVendor()public view returns(uint){
         return address(this).balance;
     }
     function VendorTokenBalance()public view returns(uint){
-        return myogg.balanceOf(address(this));
+        return balanceOf(address(this));
     }
 
     function TokenBalance()public view returns(uint){
-        return myogg.balanceOf(msg.sender);
+        return balanceOf(msg.sender);
     }
     function ETHBalance()public view returns(uint){
         return (msg.sender).balance;

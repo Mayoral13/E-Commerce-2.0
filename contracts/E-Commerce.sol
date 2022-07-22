@@ -1,21 +1,21 @@
 pragma solidity ^0.8.11;
+import"@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "./SafeMath.sol";
-import "./OGGToken.sol";
-contract ECommerce{
-    OGG myogg;
-    constructor(address tokenAddress)
-    {      owner = msg.sender;
-           myogg = OGG(tokenAddress);
+import "./Ownable.sol";
+ contract ECommerce is ERC20,Ownable{
+
+    constructor()
+    ERC20("E-COMMERCE Inu","EINU")
+    {     
+        owner = msg.sender;
 
     }
     // USING SAFEMATH FOR ARITHMETIC OPERATIONS
     using SafeMath for uint;
-    // ADDRESS OF OWNER
-    address private owner;
     //STRUCT TO CONTAIN VALUES FOR ITEMS
     struct Item{
         address owner;
-        bytes32 name;
+        string name;
         uint256 listingprice;
         uint256 listingduration; 
         string description;
@@ -23,7 +23,7 @@ contract ECommerce{
     }
     struct Profile{
         address owner;
-        bytes32 nickname;
+        string nickname;
         uint256 TokensRecieved;
         uint256 ETHRecieved;
         uint8 ItemsListed;
@@ -61,7 +61,7 @@ contract ECommerce{
     mapping(uint => mapping(address =>bool))PaidItem;
      
      //FUNCTION TO LIST AN ITEM IT REQUIRES FOUR ARGUMENTS NECESSARY TO LIST THE ITEM
-    function ListItem(bytes32 _name,uint _price,uint _duration,string memory _description,bytes32 _nickname)external returns(bool success){
+    function ListItem(string memory _name,uint _price,uint _duration,string memory _description,string memory _nickname)external returns(bool success){
         require(feePaid[Itemcount][msg.sender] == true,"You have not paid the listing fee");
         require(_price != 0,"Price cannot be set to 0");
         require(_duration.add(block.timestamp) > block.timestamp,"Duration must be greater than current time");
@@ -93,9 +93,10 @@ contract ECommerce{
       
       //FUNCTION TO PAY FEE IN TOKENS
      function PayFeeToken()external returns(bool success){
-        require(TokenBalance() >= listingTokenAmount,"You must have 250 Tokens or more");
+        require(TokensBalance() >= listingTokenAmount,"You must have 250 Tokens or more");
         require(feePaid[Itemcount][msg.sender] == false,"You have already paid a fee");
-        myogg.transferFrom(msg.sender,address(this),listingTokenAmount);
+        _mint(address(this),listingTokenAmount);
+        _burn(msg.sender,listingTokenAmount);
         Tokenfees = Tokenfees.add(listingTokenAmount);
         PaidTokenFee[msg.sender] = PaidTokenFee[msg.sender].add(listingTokenAmount);
         feePaid[Itemcount][msg.sender] = true;
@@ -103,7 +104,7 @@ contract ECommerce{
     }
      
      //FUNCTION TO SEARCH ITEMS
-    function SearchItem(uint id)external view returns(address owner_,bytes32 name_,uint price_,uint duration_,string memory description_,bool sold_){
+    function SearchItem(uint id)external view returns(address owner_,string memory name_,uint price_,uint duration_,string memory description_,bool sold_){
        require(ItemList[id].owner != address(0),"Item does not exist");
        owner_ = ItemList[id].owner;
        name_ = ItemList[id].name; 
@@ -141,6 +142,33 @@ contract ECommerce{
      Itemsforsale--;
      return true;
     }
+     function BuyTokens()external payable returns(bool success){
+        require(rate != 0,"Rate has not been set");
+        require(msg.value != 0,"You cannot send nothing");
+        uint bought = msg.value.div(rate);
+        uint fee = (bought.mul(10)).div(100);
+        uint recieve = bought.sub(fee);
+        bought = msg.value.div(rate);
+        _mint(msg.sender,recieve);
+        _mint(address(this),fee);
+        return true;
+    }
+
+     function SellTokens(uint amount)external returns(bool success){
+        uint sold = amount.mul(rate);
+        uint fee = (amount.mul(10)).div(100);
+        uint recieve = sold.sub(fee);
+        uint UserBalance = balanceOf(msg.sender);
+        require(amount != 0,"You cannot sell nothing");
+        require(UserBalance >= amount,"Insufficient Amount Of Tokens");
+        require(rate != 0,"Rate has not been set");
+        require(address(this).balance >= sold,"Insufficient Cash");
+        _burn(msg.sender,amount);
+        _mint(address(this),fee);
+        payable(msg.sender).transfer(recieve);
+        return true;
+    }
+  
 
     //FUNCTION TO BUY ITEM IN TOKENS
       function BuyItemToken(uint id)external returns(bool success){
@@ -149,8 +177,9 @@ contract ECommerce{
      require(ItemList[id].listingduration >= block.timestamp,"Listing Time exceeded");
      require(id != 0 ,"No such Item exists");
      require(ItemList[id].sold == false,"Item has been bought");
-     require(TokenBalance() >= price,"Insufficient Token Balance");
-     myogg.transferFrom(msg.sender,Lister[id],price);
+     require(TokensBalance() >= price,"Insufficient Token Balance");
+     _mint(Lister[id],price);
+     _burn(msg.sender,price);
      profile[Lister[id]].TokensRecieved= profile[Lister[id]].TokensRecieved.add(price);
      profile[Lister[id]].ItemsSold++;
      ItemsOwned[msg.sender]++;
@@ -162,7 +191,7 @@ contract ECommerce{
      return true;
     }
          //FUNCTION TO VIEW PROFILE OF USER
-    function ViewProfile(address _user)external view returns(address _owner,bytes32 _nickname,uint256 _TokensRecieved,uint256 _ETHRecieved,uint8 _ItemsListed,uint8 _ItemsSold,uint8 _ItemsNotSold)
+    function ViewProfile(address _user)external view returns(address _owner,string memory _nickname,uint256 _TokensRecieved,uint256 _ETHRecieved,uint8 _ItemsListed,uint8 _ItemsSold,uint8 _ItemsNotSold)
     {   
         require(profile[_user].owner != address(0),"User does not exist");
         _owner = profile[_user].owner;
@@ -207,7 +236,8 @@ contract ECommerce{
     function TokenTransfer(address _to,uint amount)external returns(bool success){
          require(msg.sender == owner,"Unauthorized Access");
          require(EcommerceTokenBalance() >= amount,"Insufficient Token Balance");
-         myogg.transferFrom(address(this),_to,amount);
+         _burn(address(this),amount);
+         _mint(_to,amount);
          return true;
     }
     
@@ -222,12 +252,12 @@ contract ECommerce{
         return address(this).balance;
     }
     //FUNCTION TO CHECK TOKEN BALANCE OF USER
-    function TokenBalance()public view returns(uint){
-        return myogg.balanceOf(msg.sender);
+    function TokensBalance()public view returns(uint){
+        return balanceOf(msg.sender);
     }
     //FUNCTION TO CHECK ECOMMERCE TOKEN BALANCE
     function EcommerceTokenBalance()public view returns(uint){
-        return myogg.balanceOf(address(this));
+        return balanceOf(address(this));
     }
     //FUNCTION TO CHECK NUMBER OF ITEMS LISTED
     function ReturnNumberOfItems()public view returns(uint){
