@@ -27,12 +27,10 @@ import "./Ownable.sol";
         uint256 ETHRecieved;
         uint8 ItemsListed;
         uint8 ItemsSold;
-        uint8 ItemsNotSold; 
     }
     //VARIABLES NAMES SHOULD EXPLAIN WHAT THEY MEAN
     uint private Itemcount = 1;
     uint private Itemsold;
-    uint private Itemsforsale;
     uint private numberofItems;
     uint private rate = 40000000000000;
     uint private Etherfees;
@@ -58,6 +56,18 @@ import "./Ownable.sol";
     mapping(uint => mapping(address =>bool))feePaid;
     //MAPPING TO KEEP TRACK OF ITEMS PAID FOR BY USER
     mapping(uint => mapping(address =>bool))PaidItem;
+
+    /*****EVENTS */
+    event buyTokens(address indexed _by,uint amount);
+    event sellTokens(address indexed _by,uint amount);
+    event listItem(address indexed _by,uint when);
+    event feeETH(address indexed _by,uint amount);
+    event feeToken(address indexed _by,uint amount);
+    event buyItemtokens(address indexed _by,uint amount,address indexed _reciever);
+    event buyItemETH(address indexed _by,uint amount,address indexed _reciever);
+    event withdrawETH(address indexed _by,uint amount,address indexed _to);
+    event transferToken(address indexed _by,uint amount,address indexed _to);
+
      
      //FUNCTION TO LIST AN ITEM IT REQUIRES FOUR ARGUMENTS NECESSARY TO LIST THE ITEM
     function ListItem(string memory _name,uint _price,uint _duration,string memory _description,string memory _nickname)external returns(bool success){
@@ -74,9 +84,9 @@ import "./Ownable.sol";
         profile[msg.sender].nickname = _nickname;
         profile[msg.sender].ItemsListed++;
         UserItemsListed[msg.sender].push(Itemcount);
-        Itemsforsale++;
         numberofItems++;
         Itemcount++;
+        emit listItem(msg.sender,block.timestamp);
         return true;
     }
     
@@ -87,6 +97,7 @@ import "./Ownable.sol";
         Etherfees = Etherfees.add(msg.value);
         PaidEtherFee[msg.sender] = PaidEtherFee[msg.sender].add(msg.value);
         feePaid[Itemcount][msg.sender] = true;
+        emit feeETH(msg.sender,msg.value);
         return true;
     }
       
@@ -99,6 +110,7 @@ import "./Ownable.sol";
         Tokenfees = Tokenfees.add(listingTokenAmount);
         PaidTokenFee[msg.sender] = PaidTokenFee[msg.sender].add(listingTokenAmount);
         feePaid[Itemcount][msg.sender] = true;
+        emit feeToken(msg.sender,listingTokenAmount);
         return true;
     }
      
@@ -112,19 +124,9 @@ import "./Ownable.sol";
        description_ = ItemList[id].description;
        sold_ = ItemList[id].sold;
     }
-      
-      //INTERNAL FUNCTION TO KEEP TRACK OF EXPIRED ITEMS AND REMOVE THEM FROM ITEMSFOR SALE
-     function Checker(uint id)internal returns(bool success){
-        if(ItemList[id].listingduration >= block.timestamp){
-            profile[Lister[id]].ItemsNotSold++;
-            Itemsforsale--;
-            return true;
-        }
-    }
-     
+    
      //FUNCTION TO BUY ITEM IN ETH
      function BuyItemETH(uint id)external payable returns(bool success){
-     Checker(id);
      require(ItemList[id].listingduration >= block.timestamp,"Listing Time exceeded");
      require(id != 0 ,"No such Item exists");
      require(ItemList[id].sold == false,"Item has been bought");
@@ -138,7 +140,7 @@ import "./Ownable.sol";
      PaidItem[id][msg.sender] = true;
      ItemList[id].sold = true;
      Itemsold++;
-     Itemsforsale--;
+     emit buyItemETH(msg.sender,msg.value,Lister[id]);
      return true;
     }
      function BuyTokens()external payable returns(bool success){
@@ -150,6 +152,7 @@ import "./Ownable.sol";
         bought = msg.value.div(rate);
         _mint(msg.sender,recieve);
         _mint(address(this),fee);
+        emit buyTokens(msg.sender,bought);
         return true;
     }
 
@@ -165,13 +168,13 @@ import "./Ownable.sol";
         _burn(msg.sender,amount);
         _mint(address(this),fee);
         payable(msg.sender).transfer(recieve);
+        emit sellTokens(msg.sender,amount);
         return true;
     }
   
 
     //FUNCTION TO BUY ITEM IN TOKENS
       function BuyItemToken(uint id)external returns(bool success){
-     Checker(id);
      uint price = ItemList[id].listingprice.div(rate);
      require(ItemList[id].listingduration >= block.timestamp,"Listing Time exceeded");
      require(id != 0 ,"No such Item exists");
@@ -186,11 +189,11 @@ import "./Ownable.sol";
      PaidItem[id][msg.sender] = true;
      ItemList[id].sold = true;
      Itemsold++;
-     Itemsforsale--;
+     emit buyItemtokens(msg.sender,price,Lister[id]);
      return true;
     }
          //FUNCTION TO VIEW PROFILE OF USER
-    function ViewProfile(address _user)external view returns(address _owner,string memory _nickname,uint256 _TokensRecieved,uint256 _ETHRecieved,uint8 _ItemsListed,uint8 _ItemsSold,uint8 _ItemsNotSold)
+    function ViewProfile(address _user)external view returns(address _owner,string memory _nickname,uint256 _TokensRecieved,uint256 _ETHRecieved,uint8 _ItemsListed,uint8 _ItemsSold)
     {   
         require(profile[_user].owner != address(0),"User does not exist");
         _owner = profile[_user].owner;
@@ -199,14 +202,16 @@ import "./Ownable.sol";
         _ETHRecieved = profile[_user].ETHRecieved;
         _ItemsListed = profile[_user].ItemsListed;
         _ItemsSold = profile[_user].ItemsSold;
-        _ItemsNotSold = profile[_user].ItemsNotSold;  
+    
     }
     //FUNCTION TO VIEW ITEM PRICE IN ETH
     function ViewItemPriceETH(uint id)external view returns(uint){
+        require(ItemList[id].owner != address(0),"Item does not exist");
     return ItemList[id].listingprice;
     }
       //FUNCTION TO VIEW ITEM PRICE IN TOKENS
     function ViewItemPriceTokens(uint id)external view returns(uint){
+         require(ItemList[id].owner != address(0),"Item does not exist");
     return ItemList[id].listingprice.div(rate);
     }
      
@@ -227,22 +232,27 @@ import "./Ownable.sol";
      //FUNCTION TO WITHDRAW ETH ONLY OWNER CAN USE
     function Withdraw(address payable _to,uint amount)external returns(bool success){
         require(msg.sender == owner,"Unauthorized Access");
+        require(_to != address(0),"You cant send to null address");
         require(amount <= address(this).balance,"Insufficient Ether");
         _to.transfer(amount);
+        emit withdrawETH(msg.sender,amount,_to);
         return true;
     }
      //FUNCTION TO TRANSFER TOKENS ONLY OWNER CAN USE
     function TokenTransfer(address _to,uint amount)external returns(bool success){
+        require(_to != address(0),"You cant send to null address");
          require(msg.sender == owner,"Unauthorized Access");
          require(EcommerceTokenBalance() >= amount,"Insufficient Token Balance");
          _burn(address(this),amount);
          _mint(_to,amount);
+         emit transferToken(msg.sender,amount, _to);
          return true;
     }
     
     //FUNCTION TO REVEAL THE ITEM ID LISTED BY USERS
-    /********* REVEAL THIS SHITTY CODE */
-    function UserItems(address user)public view returns(uint[]memory){
+    
+    function UserItems(address user)external view returns(uint[]memory){
+        require( user != address(0),"Null address owns nothing");
         return UserItemsListed[user];
     }
   
@@ -259,25 +269,25 @@ import "./Ownable.sol";
         return balanceOf(address(this));
     }
     //FUNCTION TO CHECK NUMBER OF ITEMS LISTED
-    function ReturnNumberOfItems()public view returns(uint){
+    function ReturnNumberOfItems()external view returns(uint){
         return numberofItems;
     }
     //FUNCTION TO CHECK NUMBER OF ITEMS SOLD
-    function ReturnNumberOfItemsSold()public view returns(uint){
+    function ReturnNumberOfItemsSold()external view returns(uint){
         return Itemsold;
     }
-    //FUNCTION TO CHECK NUMBER OF ITEMS ON SALE
-    function ReturnNumberOfItemsOnSale()public view returns(uint){
-        return Itemsforsale;
-    } 
 
-    /*********TODO*
-    TODO
-    ITEMS SOLD AND NOT SOLD ISSUE 
-    WHEN USER LISTES 2 ITEM ONE ITEM IS SOLD THE OTHER IS MARKED AS NOT SOLD/
+    //FUNCTION TO CHANGE OWNER
+    function ChangeOwner(address payable _newOwner) external returns(bool success){
+        transferOwnership(_newOwner);
+        return true;
+    }
 
-    
-
+    //FUNCTION TO REVEAL OWNER
+    function ShowOwner()external view returns(address){
+        return owner;
+    }
+   
     }
 
 // 1 ETH = 1000000000000000000
