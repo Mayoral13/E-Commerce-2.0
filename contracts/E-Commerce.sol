@@ -7,8 +7,7 @@ import "./Ownable.sol";
     constructor()
     ERC20("E-COMMERCE Inu","EINU")
     {     
-        owner = msg.sender;
-
+     
     }
     // USING SAFEMATH FOR ARITHMETIC OPERATIONS
     using SafeMath for uint;
